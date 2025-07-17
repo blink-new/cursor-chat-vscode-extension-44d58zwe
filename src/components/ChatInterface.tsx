@@ -28,6 +28,8 @@ import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useTheme } from '../hooks/use-theme'
 import { CodeDiff } from './CodeDiff'
 import { Terminal } from './Terminal'
+import { StreamingMessage } from './StreamingMessage'
+import { StreamingCodeBlock } from './StreamingCodeBlock'
 
 interface Message {
   id: string
@@ -38,6 +40,8 @@ interface Message {
   hasCodeDiff?: boolean
   hasTerminal?: boolean
   terminalLines?: any[]
+  isStreaming?: boolean
+  streamedContent?: string
 }
 
 interface CodeBlockProps {
@@ -91,7 +95,13 @@ const CodeBlock = ({ children, className }: CodeBlockProps) => {
   )
 }
 
-const MessageBubble = ({ message }: { message: Message }) => {
+const MessageBubble = ({ 
+  message, 
+  onUpdateMessage 
+}: { 
+  message: Message
+  onUpdateMessage: (messageId: string, updates: Partial<Message>) => void
+}) => {
   const isUser = message.type === 'user'
   const [showTerminal, setShowTerminal] = useState(false)
 
@@ -108,29 +118,14 @@ const MessageBubble = ({ message }: { message: Message }) => {
           {isUser ? (
             <p className="text-sm leading-relaxed">{message.content}</p>
           ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown
-                components={{
-                  code({ node, inline, className, children, ...props }) {
-                    const match = /language-(\\w+)/.exec(className || '')
-                    return !inline && match ? (
-                      <CodeBlock className={className}>
-                        {String(children).replace(/\\n$/, '')}
-                      </CodeBlock>
-                    ) : (
-                      <code
-                        className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono"
-                        {...props}
-                      >
-                        {children}
-                      </code>
-                    )
-                  },
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
-            </div>
+            <StreamingMessage
+              content={message.content}
+              isStreaming={message.isStreaming}
+              streamingSpeed={15}
+              onStreamComplete={() => {
+                onUpdateMessage(message.id, { isStreaming: false })
+              }}
+            />
           )}
           
           {/* Attachments */}
@@ -295,6 +290,12 @@ What would you like to work on today? Try asking me to:
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const updateMessage = (messageId: string, updates: Partial<Message>) => {
+    setMessages(prev => prev.map(m => 
+      m.id === messageId ? { ...m, ...updates } : m
+    ))
+  }
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -393,6 +394,7 @@ Would you like me to explain any part of this code or help you with something el
         timestamp: new Date(),
         hasCodeDiff: shouldShowDiff,
         hasTerminal: shouldShowTerminal,
+        isStreaming: true,
       }
       
       setMessages(prev => [...prev, assistantMessage])
@@ -502,7 +504,7 @@ Would you like me to explain any part of this code or help you with something el
               <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4">
                   {messages.map((message) => (
-                    <MessageBubble key={message.id} message={message} />
+                    <MessageBubble key={message.id} message={message} onUpdateMessage={updateMessage} />
                   ))}
                   {isLoading && (
                     <div className="flex justify-start mb-4">
